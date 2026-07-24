@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Ordonnances Rapides</title>
+    <meta name="description" content="Recherchez et copiez rapidement des lignes d’ordonnance." />
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <main class="page">
+      <section class="hero">
+        <div style="position: absolute; top: 24px; right: 20px;">
+          <a href="admin.html" style="color: var(--accent); text-decoration: none; font-weight: 600; font-size: 0.9rem;">Administration</a>
+        </div>
+        <p class="eyebrow">Ordonnances Rapides</p>
+        <h1>Recherchez une ligne d’ordonnance en un instant</h1>
+        <p class="subtitle">Copiez en un clic pour la coller dans votre logiciel.</p>
+
+        <label class="search-shell" for="searchInput">
+          <span class="search-icon" aria-hidden="true">🔎</span>
+          <div style="position: relative; width: 100%;">
+            <input
+              id="searchInput"
+              type="text"
+              placeholder="Rechercher une ordonnance..."
+              autocomplete="off"
+              style="width: 100%; border: 0; outline: 0; background: transparent; padding: 0;"
+            />
+            <div id="suggestionsDropdown" class="suggestions-dropdown"></div>
+          </div>
+          <button id="clearSearchBtn" type="button" class="clear-btn" title="Nouvelle recherche" aria-label="Réinitialiser la recherche">×</button>
+        </label>
+
+        <p id="resultsSummary" class="results-summary"></p>
+      </section>
+
+      <section class="results-section" aria-live="polite">
+        <div id="resultsList" class="results-list"></div>
+      </section>
+    </main>
+
+    <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
+    <script src="firebaseConfig.js"></script>
+    <script>
+      const isConfigReady =
+        typeof firebaseConfig !== "undefined" &&
+        firebaseConfig.apiKey &&
+        !firebaseConfig.apiKey.includes("REMPLACE") &&
+        firebaseConfig.projectId &&
+        !firebaseConfig.projectId.includes("REMPLACE");
+
+      const searchInput = document.getElementById("searchInput");
+      const resultsList = document.getElementById("resultsList");
+      const resultsSummary = document.getElementById("resultsSummary");
+      const suggestionsDropdown = document.getElementById("suggestionsDropdown");
+      const clearSearchBtn = document.getElementById("clearSearchBtn");
+      const ordonnances = [];
+      let selectedOrdonnanceId = null;
+
+      if (!isConfigReady) {
+        resultsSummary.textContent = "Remplissez firebaseConfig.js avec vos clés Firebase pour activer la recherche.";
+        resultsList.innerHTML = '<div class="empty-state">La configuration Firebase n’est pas encore prête.</div>';
+      } else {
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.firestore();
+
+        function escapeHtml(value) {
+          return String(value)
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/\"/g, "&quot;")
+            .replace(/'/g, "&#39;");
+        }
+
+        function normalizeText(text) {
+          return text
+            .toLowerCase()
+            .normalize("NFD")
+            .replace(/[\u0300-\u036f]/g, "");
+        }
+
+        function renderSuggestions() {
+          const query = searchInput.value.trim();
+          const normalizedQuery = normalizeText(query);
+
+          if (!normalizedQuery) {
+            suggestionsDropdown.innerHTML = "";
+            resultsList.innerHTML = "";
+            resultsSummary.textContent = "";
+            selectedOrdonnanceId = null;
+            clearSearchBtn.classList.remove("visible");
+            return;
+          }
+
+          const filtered = ordonnances.filter((item) => {
+            const searchable = normalizeText(item.titre || "");
+            return searchable.includes(normalizedQuery);
+          });
+
+          if (!filtered.length) {
+            suggestionsDropdown.innerHTML = '<div class="suggestion-item">Aucune ordonnance</div>';
+            resultsList.innerHTML = "";
+            resultsSummary.textContent = "";
+            return;
+          }
+
+          suggestionsDropdown.innerHTML = filtered
+            .map(
+              (item) => `
+                <div class="suggestion-item" data-id="${item.id}">
+                  ${escapeHtml(item.titre || "Sans titre")}
+                </div>
+              `
+            )
+            .join("");
+
+          suggestionsDropdown.querySelectorAll(".suggestion-item").forEach((item) => {
+            item.addEventListener("click", () => {
+              const id = item.dataset.id;
+              selectOrdonnance(id);
+            });
+          });
+        }
+
+        function selectOrdonnance(id) {
+          selectedOrdonnanceId = id;
+          const item = ordonnances.find((o) => o.id === id);
+          if (!item) return;
+
+          searchInput.value = item.titre || "";
+          suggestionsDropdown.innerHTML = "";
+          clearSearchBtn.classList.add("visible");
+
+          resultsList.innerHTML = `
+            <article class="card">
+              <div class="card-content">
+                <h2>${escapeHtml(item.titre || "Sans titre")}</h2>
+                <p>${escapeHtml(item.texte || "")}</p>
+              </div>
+              <button class="copy-btn" type="button" data-text="${(item.texte || "").replace(/"/g, "&quot;")}">
+                Copier
+              </button>
+            </article>
+          `;
+
+          resultsSummary.textContent = "";
+
+          const copyBtn = resultsList.querySelector(".copy-btn");
+          if (copyBtn) {
+            copyBtn.addEventListener("click", async () => {
+              const text = copyBtn.dataset.text;
+              try {
+                if (navigator.clipboard && navigator.clipboard.writeText) {
+                  await navigator.clipboard.writeText(text);
+                } else {
+                  const fallback = document.createElement("textarea");
+                  fallback.value = text;
+                  document.body.appendChild(fallback);
+                  fallback.select();
+                  document.execCommand("copy");
+                  document.body.removeChild(fallback);
+                }
+                copyBtn.textContent = "Copié ✓";
+                copyBtn.classList.add("is-copied");
+                window.setTimeout(() => {
+                  copyBtn.textContent = "Copier";
+                  copyBtn.classList.remove("is-copied");
+                }, 1400);
+              } catch (error) {
+                copyBtn.textContent = "Échec";
+                copyBtn.classList.add("is-copied");
+                window.setTimeout(() => {
+                  copyBtn.textContent = "Copier";
+                  copyBtn.classList.remove("is-copied");
+                }, 1400);
+              }
+            });
+          }
+        }
+
+        function renderResults() {
+          renderSuggestions();
+        }
+
+        function clearSearch() {
+          searchInput.value = "";
+          clearSearchBtn.classList.remove("visible");
+          renderResults();
+        }
+
+        async function loadOrdonnances() {
+          try {
+            const snapshot = await db.collection("ordonnances").orderBy("titre").get();
+            const docs = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+            ordonnances.splice(0, ordonnances.length, ...docs);
+            renderResults();
+          } catch (error) {
+            resultsSummary.textContent = "Impossible de charger les ordonnances.";
+            resultsList.innerHTML = '<div class="empty-state">Vérifiez vos règles Firestore et votre configuration Firebase.</div>';
+            console.error(error);
+          }
+        }
+
+        searchInput.addEventListener("input", renderResults);
+        clearSearchBtn.addEventListener("click", clearSearch);
+        loadOrdonnances();
+      }
+    </script>
+  </body>
+</html>

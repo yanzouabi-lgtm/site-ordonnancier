@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Administration - Ordonnances Rapides</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <main class="page admin-page">
+      <section class="hero compact">
+        <div style="position: absolute; top: 24px; left: 20px;">
+          <a href="index.html" style="color: var(--accent); text-decoration: none; font-weight: 600; font-size: 0.9rem;">← Retour</a>
+        </div>
+        <p class="eyebrow">Administration</p>
+        <h1>Gérez les lignes d’ordonnance</h1>
+        <p class="subtitle">Ajoutez, modifiez ou supprimez des ordonnances depuis cette page.</p>
+      </section>
+
+      <section id="authSection" class="panel">
+        <div class="card form-card" style="text-align: center;">
+          <h2>Connexion admin</h2>
+          <button id="googleSignInBtn" class="copy-btn" type="button" style="background: #4285f4; margin: 20px 0;">
+            Se connecter avec Google
+          </button>
+          <p id="authMessage" class="message" aria-live="polite"></p>
+        </div>
+      </section>
+
+      <section id="adminSection" class="panel hidden">
+        <div class="toolbar">
+          <h2>Gestion des ordonnances</h2>
+          <button id="logoutBtn" class="secondary" type="button">Déconnexion</button>
+        </div>
+
+        <form id="ordonnanceForm" class="card form-card">
+          <h3 id="formTitle">Ajouter une ordonnance</h3>
+          <label>
+            Titre
+            <input id="titleInput" type="text" required />
+          </label>
+          <label>
+            Texte
+            <textarea id="textInput" rows="6" required></textarea>
+          </label>
+          <div class="form-actions">
+            <button class="copy-btn" type="submit" id="submitButton">Ajouter</button>
+            <button id="cancelEditBtn" class="secondary hidden" type="button">Annuler</button>
+          </div>
+          <p id="formMessage" class="message" aria-live="polite"></p>
+        </form>
+
+        <div class="search-shell" style="max-width: 100%; margin-bottom: 20px; margin-top: 40px;">
+          <span class="search-icon" aria-hidden="true">🔎</span>
+          <input
+            id="adminSearchInput"
+            type="text"
+            placeholder="Rechercher une ordonnance à modifier..."
+            autocomplete="off"
+            style="width: 100%; border: 0; outline: 0; background: transparent; padding: 0;"
+          />
+        </div>
+
+        <div id="adminList" class="admin-list"></div>
+      </section>
+    </main>
+
+    <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
+    <script src="firebaseConfig.js"></script>
+    <script>
+      const isConfigReady =
+        typeof firebaseConfig !== "undefined" &&
+        firebaseConfig.apiKey &&
+        !firebaseConfig.apiKey.includes("REMPLACE") &&
+        firebaseConfig.projectId &&
+        !firebaseConfig.projectId.includes("REMPLACE");
+
+      const authSection = document.getElementById("authSection");
+      const adminSection = document.getElementById("adminSection");
+      const googleSignInBtn = document.getElementById("googleSignInBtn");
+      const ordonnanceForm = document.getElementById("ordonnanceForm");
+      const authMessage = document.getElementById("authMessage");
+      const formMessage = document.getElementById("formMessage");
+      const adminList = document.getElementById("adminList");
+      const titleInput = document.getElementById("titleInput");
+      const textInput = document.getElementById("textInput");
+      const formTitle = document.getElementById("formTitle");
+      const submitButton = document.getElementById("submitButton");
+      const cancelEditBtn = document.getElementById("cancelEditBtn");
+      const logoutBtn = document.getElementById("logoutBtn");
+      const adminSearchInput = document.getElementById("adminSearchInput");
+
+      let currentUser = null;
+      let editingId = null;
+      let ordonnances = [];
+
+      function escapeHtml(value) {
+        return String(value)
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/\"/g, "&quot;")
+          .replace(/'/g, "&#39;");
+      }
+
+      if (!isConfigReady) {
+        authSection.innerHTML = '<div class="empty-state">Remplissez firebaseConfig.js avec vos clés Firebase pour activer l’administration.</div>';
+      } else {
+        firebase.initializeApp(firebaseConfig);
+        const auth = firebase.auth();
+        const db = firebase.firestore();
+
+        function setAuthView(isLoggedIn) {
+          authSection.classList.toggle("hidden", isLoggedIn);
+          adminSection.classList.toggle("hidden", !isLoggedIn);
+          currentUser = isLoggedIn ? auth.currentUser : null;
+        }
+
+        function resetForm() {
+          editingId = null;
+          ordonnanceForm.reset();
+          formTitle.textContent = "Ajouter une ordonnance";
+          submitButton.textContent = "Ajouter";
+          cancelEditBtn.classList.add("hidden");
+          textInput.style.height = "130px";
+        }
+
+        function escapeHtml(value) {
+          return String(value)
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/\"/g, "&quot;")
+            .replace(/'/g, "&#39;");
+        }
+
+        function normalizeText(text) {
+          return text
+            .toLowerCase()
+            .normalize("NFD")
+            .replace(/[\u0300-\u036f]/g, "");
+        }
+
+        function autoResizeTextarea() {
+          textInput.style.height = "auto";
+          textInput.style.height = Math.max(130, textInput.scrollHeight) + "px";
+        }
+
+        function renderAdminList() {
+          const query = adminSearchInput.value.trim();
+          const normalizedQuery = normalizeText(query);
+
+          const filtered = ordonnances.filter((item) => {
+            const searchable = normalizeText(item.titre || "");
+            return !query || searchable.includes(normalizedQuery);
+          });
+
+          if (!filtered.length) {
+            adminList.innerHTML = '<div class="empty-state">Aucune ordonnance trouvée.</div>';
+            return;
+          }
+
+          adminList.innerHTML = filtered
+            .map(
+              (item) => `
+                <article class="card admin-card">
+                  <div class="card-content">
+                    <h3>${escapeHtml(item.titre)}</h3>
+                    <p>${escapeHtml(item.texte || "")}</p>
+                  </div>
+                  <div class="card-actions">
+                    <button class="secondary edit-btn" type="button" data-id="${item.id}">Modifier</button>
+                    <button class="secondary delete-btn" type="button" data-id="${item.id}">Supprimer</button>
+                  </div>
+                </article>
+              `
+            )
+            .join("");
+
+          adminList.querySelectorAll(".edit-btn").forEach((button) => {
+            button.addEventListener("click", () => {
+              const item = ordonnances.find((entry) => entry.id === button.dataset.id);
+              if (item) {
+                editingId = item.id;
+                titleInput.value = item.titre || "";
+                textInput.value = item.texte || "";
+                autoResizeTextarea();
+                formTitle.textContent = "Modifier une ordonnance";
+                submitButton.textContent = "Enregistrer";
+                cancelEditBtn.classList.remove("hidden");
+                titleInput.focus();
+              }
+            });
+          });
+
+          adminList.querySelectorAll(".delete-btn").forEach((button) => {
+            button.addEventListener("click", async () => {
+              const confirmed = window.confirm("Supprimer cette ordonnance ?");
+              if (!confirmed) return;
+              try {
+                await db.collection("ordonnances").doc(button.dataset.id).delete();
+                await loadOrdonnances();
+                formMessage.textContent = "Ordonnance supprimée.";
+              } catch (error) {
+                formMessage.textContent = "La suppression a échoué.";
+                console.error(error);
+              }
+            });
+          });
+        }
+
+        async function loadOrdonnances() {
+          const snapshot = await db.collection("ordonnances").orderBy("titre").get();
+          ordonnances = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+          renderAdminList();
+        }
+
+        auth.onAuthStateChanged((user) => {
+          setAuthView(Boolean(user));
+          if (user) {
+            loadOrdonnances();
+          }
+        });
+
+        googleSignInBtn.addEventListener("click", async () => {
+          authMessage.textContent = "Connexion en cours…";
+          try {
+            await auth.signInWithPopup(new firebase.auth.GoogleAuthProvider());
+            authMessage.textContent = "Connecté.";
+          } catch (error) {
+            authMessage.textContent = "Échec de connexion.";
+            console.error(error);
+          }
+        });
+
+        logoutBtn.addEventListener("click", async () => {
+          try {
+            await auth.signOut();
+            resetForm();
+          } catch (error) {
+            console.error(error);
+          }
+        });
+
+        ordonnanceForm.addEventListener("submit", async (event) => {
+          event.preventDefault();
+          const titre = titleInput.value.trim();
+          const texte = textInput.value.trim();
+
+          if (!titre || !texte) {
+            formMessage.textContent = "Le titre et le texte sont requis.";
+            return;
+          }
+
+          formMessage.textContent = "Enregistrement…";
+          try {
+            const payload = {
+              titre,
+              texte,
+              updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+            };
+
+            if (editingId) {
+              await db.collection("ordonnances").doc(editingId).update(payload);
+            } else {
+              await db.collection("ordonnances").add({
+                ...payload,
+                createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+              });
+            }
+
+            const wasEditing = Boolean(editingId);
+            resetForm();
+            await loadOrdonnances();
+            formMessage.textContent = wasEditing ? "Ordonnance modifiée." : "Ordonnance ajoutée.";
+          } catch (error) {
+            formMessage.textContent = "L’enregistrement a échoué.";
+            console.error(error);
+          }
+        });
+
+        cancelEditBtn.addEventListener("click", () => {
+          resetForm();
+          formMessage.textContent = "";
+        });
+
+        textInput.addEventListener("input", autoResizeTextarea);
+        adminSearchInput.addEventListener("input", renderAdminList);
+      }
+    </script>
+  </body>
+</html>
