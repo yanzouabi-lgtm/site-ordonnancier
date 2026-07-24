@@ -159,7 +159,25 @@ label textarea {
 
 .suggestion-item:hover,
 .suggestion-item.is-active {
-  background: var(--bg);
+  background: #eef4ff;
+  color: var(--accent-dark);
+  font-weight: 600;
+}
+
+.suggestion-item.is-active {
+  position: relative;
+}
+
+.suggestion-item.is-active::before {
+  content: "→";
+  position: absolute;
+  left: 8px;
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.suggestion-item.is-active {
+  padding-left: 28px;
 }
 
 .results-summary {
