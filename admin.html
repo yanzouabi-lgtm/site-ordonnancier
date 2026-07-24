@@ -231,7 +231,10 @@
             await auth.signInWithPopup(new firebase.auth.GoogleAuthProvider());
             authMessage.textContent = "Connecté.";
           } catch (error) {
-            authMessage.textContent = "Échec de connexion.";
+            const message = error?.message?.includes("authorized for OAuth operations")
+              ? "Ce domaine n’est pas autorisé dans Firebase. Ajoutez yanzouabi-lgtm.github.io dans Authentication > Settings > Authorized domains."
+              : "Échec de connexion.";
+            authMessage.textContent = message;
             console.error(error);
           }
         });

@@ -159,24 +159,17 @@ label textarea {
 
 .suggestion-item:hover,
 .suggestion-item.is-active {
-  background: #eaf2ff;
+  background: #f3f7ff;
   color: var(--accent-dark);
-  font-weight: 700;
-  box-shadow: inset 0 0 0 1px rgba(43, 108, 246, 0.16);
+  font-weight: 600;
+  box-shadow: inset 0 0 0 1px rgba(43, 108, 246, 0.12);
 }
 
-.suggestion-item.is-active {
-  position: relative;
-  padding-left: 30px;
-  border-left: 3px solid var(--accent);
-}
-
-.suggestion-item.is-active::before {
-  content: "→";
-  position: absolute;
-  left: 10px;
-  color: var(--accent);
-  font-weight: 700;
+.suggestions-dropdown.keyboard-active .suggestion-item:hover {
+  background: transparent;
+  color: inherit;
+  font-weight: inherit;
+  box-shadow: none;
 }
 
 .results-summary {

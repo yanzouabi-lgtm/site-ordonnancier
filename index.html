@@ -60,6 +60,7 @@
       const ordonnances = [];
       let selectedOrdonnanceId = null;
       let activeSuggestionIndex = -1;
+      let isKeyboardSelectionActive = false;
 
       if (!isConfigReady) {
         resultsSummary.textContent = "Remplissez firebaseConfig.js avec vos clés Firebase pour activer la recherche.";
@@ -103,6 +104,8 @@
             resultsList.innerHTML = "";
             resultsSummary.textContent = "";
             selectedOrdonnanceId = null;
+            isKeyboardSelectionActive = false;
+            suggestionsDropdown.classList.remove("keyboard-active");
             clearSearchBtn.classList.remove("visible");
             return;
           }
@@ -134,9 +137,14 @@
           suggestionsDropdown.querySelectorAll(".suggestion-item").forEach((item, index) => {
             item.addEventListener("click", () => {
               const id = item.dataset.id;
+              isKeyboardSelectionActive = false;
+              suggestionsDropdown.classList.remove("keyboard-active");
               selectOrdonnance(id);
             });
             item.addEventListener("mouseenter", () => {
+              if (isKeyboardSelectionActive) {
+                return;
+              }
               activeSuggestionIndex = index;
               updateActiveSuggestion();
             });
@@ -215,29 +223,26 @@
           const items = suggestionsDropdown.querySelectorAll(".suggestion-item");
           if (!items.length) return;
 
-          if (event.key === "ArrowDown") {
+          if (event.key === "ArrowDown" || event.key === "ArrowUp") {
             event.preventDefault();
-            activeSuggestionIndex = (activeSuggestionIndex + 1) % items.length;
-            updateActiveSuggestion();
-          } else if (event.key === "ArrowUp") {
-            event.preventDefault();
-            activeSuggestionIndex = activeSuggestionIndex <= 0 ? items.length - 1 : activeSuggestionIndex - 1;
+            isKeyboardSelectionActive = true;
+            suggestionsDropdown.classList.add("keyboard-active");
+            if (event.key === "ArrowDown") {
+              activeSuggestionIndex = (activeSuggestionIndex + 1) % items.length;
+            } else {
+              activeSuggestionIndex = activeSuggestionIndex <= 0 ? items.length - 1 : activeSuggestionIndex - 1;
+            }
             updateActiveSuggestion();
           } else if (event.key === "Enter") {
             event.preventDefault();
+            isKeyboardSelectionActive = false;
+            suggestionsDropdown.classList.remove("keyboard-active");
             const targetItem = activeSuggestionIndex >= 0 ? items[activeSuggestionIndex] : items[0];
             if (targetItem?.dataset?.id) {
               selectOrdonnance(targetItem.dataset.id);
             }
           }
         }
-
-        document.addEventListener("keydown", (event) => {
-          if (document.activeElement !== searchInput) return;
-          if (event.key === "ArrowDown" || event.key === "ArrowUp" || event.key === "Enter") {
-            handleSearchKeydown(event);
-          }
-        });
 
         async function loadOrdonnances() {
           try {
@@ -254,10 +259,15 @@
 
         searchInput.addEventListener("input", renderResults);
         searchInput.addEventListener("keydown", handleSearchKeydown);
-        searchInput.addEventListener("keyup", handleSearchKeydown);
         searchInput.addEventListener("focus", () => {
           if (suggestionsDropdown.querySelectorAll(".suggestion-item").length) {
             updateActiveSuggestion();
+          }
+        });
+        suggestionsDropdown.addEventListener("mousemove", () => {
+          if (isKeyboardSelectionActive) {
+            isKeyboardSelectionActive = false;
+            suggestionsDropdown.classList.remove("keyboard-active");
           }
         });
         clearSearchBtn.addEventListener("click", clearSearch);
