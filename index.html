@@ -87,7 +87,9 @@
         function updateActiveSuggestion() {
           const items = suggestionsDropdown.querySelectorAll(".suggestion-item");
           items.forEach((item, index) => {
-            item.classList.toggle("is-active", index === activeSuggestionIndex);
+            const isActive = index === activeSuggestionIndex;
+            item.classList.toggle("is-active", isActive);
+            item.setAttribute("aria-selected", String(isActive));
           });
         }
 
@@ -122,7 +124,7 @@
           suggestionsDropdown.innerHTML = filtered
             .map(
               (item) => `
-                <div class="suggestion-item" data-id="${item.id}">
+                <div class="suggestion-item" data-id="${item.id}" role="option" aria-selected="false">
                   ${escapeHtml(item.titre || "Sans titre")}
                 </div>
               `
@@ -230,6 +232,13 @@
           }
         }
 
+        document.addEventListener("keydown", (event) => {
+          if (document.activeElement !== searchInput) return;
+          if (event.key === "ArrowDown" || event.key === "ArrowUp" || event.key === "Enter") {
+            handleSearchKeydown(event);
+          }
+        });
+
         async function loadOrdonnances() {
           try {
             const snapshot = await db.collection("ordonnances").orderBy("titre").get();
@@ -245,6 +254,12 @@
 
         searchInput.addEventListener("input", renderResults);
         searchInput.addEventListener("keydown", handleSearchKeydown);
+        searchInput.addEventListener("keyup", handleSearchKeydown);
+        searchInput.addEventListener("focus", () => {
+          if (suggestionsDropdown.querySelectorAll(".suggestion-item").length) {
+            updateActiveSuggestion();
+          }
+        });
         clearSearchBtn.addEventListener("click", clearSearch);
         loadOrdonnances();
       }
