@@ -59,6 +59,7 @@
       const clearSearchBtn = document.getElementById("clearSearchBtn");
       const ordonnances = [];
       let selectedOrdonnanceId = null;
+      let activeSuggestionIndex = -1;
 
       if (!isConfigReady) {
         resultsSummary.textContent = "Remplissez firebaseConfig.js avec vos clés Firebase pour activer la recherche.";
@@ -83,9 +84,17 @@
             .replace(/[\u0300-\u036f]/g, "");
         }
 
+        function updateActiveSuggestion() {
+          const items = suggestionsDropdown.querySelectorAll(".suggestion-item");
+          items.forEach((item, index) => {
+            item.classList.toggle("is-active", index === activeSuggestionIndex);
+          });
+        }
+
         function renderSuggestions() {
           const query = searchInput.value.trim();
           const normalizedQuery = normalizeText(query);
+          activeSuggestionIndex = -1;
 
           if (!normalizedQuery) {
             suggestionsDropdown.innerHTML = "";
@@ -118,12 +127,18 @@
             )
             .join("");
 
-          suggestionsDropdown.querySelectorAll(".suggestion-item").forEach((item) => {
+          suggestionsDropdown.querySelectorAll(".suggestion-item").forEach((item, index) => {
             item.addEventListener("click", () => {
               const id = item.dataset.id;
               selectOrdonnance(id);
             });
+            item.addEventListener("mouseenter", () => {
+              activeSuggestionIndex = index;
+              updateActiveSuggestion();
+            });
           });
+
+          updateActiveSuggestion();
         }
 
         function selectOrdonnance(id) {
@@ -192,6 +207,27 @@
           renderResults();
         }
 
+        function handleSearchKeydown(event) {
+          const items = suggestionsDropdown.querySelectorAll(".suggestion-item");
+          if (!items.length) return;
+
+          if (event.key === "ArrowDown") {
+            event.preventDefault();
+            activeSuggestionIndex = (activeSuggestionIndex + 1) % items.length;
+            updateActiveSuggestion();
+          } else if (event.key === "ArrowUp") {
+            event.preventDefault();
+            activeSuggestionIndex = activeSuggestionIndex <= 0 ? items.length - 1 : activeSuggestionIndex - 1;
+            updateActiveSuggestion();
+          } else if (event.key === "Enter") {
+            event.preventDefault();
+            const targetItem = activeSuggestionIndex >= 0 ? items[activeSuggestionIndex] : items[0];
+            if (targetItem?.dataset?.id) {
+              selectOrdonnance(targetItem.dataset.id);
+            }
+          }
+        }
+
         async function loadOrdonnances() {
           try {
             const snapshot = await db.collection("ordonnances").orderBy("titre").get();
@@ -206,6 +242,7 @@
         }
 
         searchInput.addEventListener("input", renderResults);
+        searchInput.addEventListener("keydown", handleSearchKeydown);
         clearSearchBtn.addEventListener("click", clearSearch);
         loadOrdonnances();
       }
